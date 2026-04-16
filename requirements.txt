@@ -9,4 +9,4 @@ python-dotenv
 torch
 transformers
 numpy
-chromadb
+
