@@ -1,12 +1,13 @@
 import os
-import chromadb
+import faiss
+import numpy as np
 from sentence_transformers import SentenceTransformer
 from dotenv import load_dotenv
 
 load_dotenv()
 
-chroma_client = chromadb.Client()
 embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
+
 
 def load_documents(docs_folder: str = "rag_docs") -> list:
     documents = []
@@ -23,28 +24,29 @@ def load_documents(docs_folder: str = "rag_docs") -> list:
                 print(f"   📄 Loaded: {filename}")
     return documents
 
-def build_vector_store(documents: list):
-    collection = chroma_client.get_or_create_collection(name="hr_docs")
-    for i, doc in enumerate(documents):
-        embedding = embedding_model.encode(doc["content"]).tolist()
-        collection.add(
-            documents=[doc["content"]],
-            embeddings=[embedding],
-            metadatas=[{"filename": doc["filename"]}],
-            ids=[f"doc_{i}"]
-        )
-    return collection
 
-def retrieve_relevant_context(query: str, collection, top_k: int = 3) -> str:
-    query_embedding = embedding_model.encode(query).tolist()
-    results = collection.query(
-        query_embeddings=[query_embedding],
-        n_results=min(top_k, collection.count())
-    )
-    if not results["documents"][0]:
+def build_vector_store(documents: list):
+    contents = [doc["content"] for doc in documents]
+    embeddings = embedding_model.encode(contents)
+    embeddings = np.array(embeddings).astype("float32")
+
+    index = faiss.IndexFlatL2(embeddings.shape[1])
+    index.add(embeddings)
+    return index, contents
+
+
+def retrieve_relevant_context(query: str, index, contents: list, top_k: int = 3) -> str:
+    query_embedding = embedding_model.encode([query]).astype("float32")
+    top_k = min(top_k, len(contents))
+    distances, indices = index.search(query_embedding, top_k)
+
+    results = [contents[i] for i in indices[0] if i < len(contents)]
+    if not results:
         return "No relevant documents found."
-    context = "\n\n---\n\n".join(results["documents"][0])
+
+    context = "\n\n---\n\n".join(results)
     return context
+
 
 def run_rag_agent(eda_results: dict) -> dict:
     print("🤖 Agent 6 [RAG] — Starting...")
@@ -62,7 +64,7 @@ def run_rag_agent(eda_results: dict) -> dict:
         }
 
     print("   🔢 Building vector store...")
-    collection = build_vector_store(documents)
+    index, contents = build_vector_store(documents)
 
     print("   🔍 Retrieving relevant HR context...")
     query = f"""
@@ -70,7 +72,7 @@ def run_rag_agent(eda_results: dict) -> dict:
     Sales department attrition highest. Overtime strongly linked to attrition.
     Average age of employees who left is {eda_results['avg_age_left']}.
     """
-    context = retrieve_relevant_context(query, collection)
+    context = retrieve_relevant_context(query, index, contents)
 
     print("   ✅ Agent 6 Done! Relevant context retrieved.")
     print("\n--- RAG CONTEXT PREVIEW ---")
