@@ -4,7 +4,7 @@ from datetime import datetime
 
 load_dotenv()
 
-def run_report_agent(insights_results: dict) -> str:
+def run_report_agent(insights_results: dict, output_dir: str = "reports") -> str:
     print("🤖 Agent 5 [Report Writer] — Starting...")
 
     insights = insights_results["insights"]
@@ -52,8 +52,8 @@ def run_report_agent(insights_results: dict) -> str:
 </html>
 """
 
-    os.makedirs("reports", exist_ok=True)
-    filename = f"reports/hr_attrition_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html"
+    os.makedirs(output_dir, exist_ok=True)
+    filename = os.path.join(output_dir, f"hr_attrition_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html")
     with open(filename, "w", encoding="utf-8") as f:
         f.write(html_content)
 

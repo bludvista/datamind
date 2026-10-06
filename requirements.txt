@@ -9,4 +9,8 @@ python-dotenv
 torch
 transformers
 numpy
-
+fastapi
+uvicorn
+python-multipart
+pytest
+httpx
