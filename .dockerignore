@@ -1,0 +1,29 @@
+# Secrets: never send these to the Docker build
+.env
+.env.*
+
+# Version control and CI
+.git
+.gitignore
+.github/
+
+# Virtual environments
+venv/
+.venv/
+
+# Caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Generated output and local datasets
+outputs/
+reports/
+data/
+
+# Not needed inside the image
+tests/
+Dockerfile
+.dockerignore
