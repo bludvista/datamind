@@ -1,4 +1,6 @@
 import os
+import threading
+from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
@@ -83,6 +85,62 @@ def test_visualization_saves_four_charts(eda_results, tmp_path):
     ]
     for path in paths:
         assert os.path.getsize(path) > 0
+
+
+def test_visualization_does_not_use_pyplot(eda_results, tmp_path, monkeypatch):
+    import matplotlib.pyplot as plt
+
+    def pyplot_used(*args, **kwargs):
+        raise AssertionError("visualization agent called pyplot, which shares state between threads")
+
+    for name in ["figure", "subplots", "gcf", "gca", "savefig", "tight_layout", "close"]:
+        monkeypatch.setattr(plt, name, pyplot_used)
+
+    paths = run_visualization_agent(eda_results, output_dir=str(tmp_path / "charts"))
+
+    assert len(paths) == 4
+
+
+def test_visualization_parallel_requests_do_not_interfere(sample_df, tmp_path):
+    # Two "requests" with different data, so their charts are visibly different
+    other_df = sample_df.copy()
+    other_df["Attrition"] = ["No", "Yes", "No", "Yes", "Yes", "No", "No", "Yes"]
+    other_df["MonthlyIncome"] = other_df["MonthlyIncome"] * 3
+    other_df["Age"] = other_df["Age"] + 10
+
+    requests = {}
+    for name, df in [("a", sample_df), ("b", other_df)]:
+        csv_path = tmp_path / f"{name}.csv"
+        df.to_csv(csv_path, index=False)
+        requests[name] = run_eda_agent(run_ingestion_agent(str(csv_path)))
+
+    def read_charts(paths):
+        charts = []
+        for path in paths:
+            with open(path, "rb") as f:
+                charts.append(f.read())
+        return charts
+
+    # What each request's charts look like when rendered alone
+    expected = {
+        name: read_charts(run_visualization_agent(eda, output_dir=str(tmp_path / "alone" / name)))
+        for name, eda in requests.items()
+    }
+    assert all(a != b for a, b in zip(expected["a"], expected["b"]))
+
+    rounds = 5
+    barrier = threading.Barrier(2)
+
+    def render(name, round_number):
+        barrier.wait(timeout=30)  # start both threads' rendering at the same moment
+        output_dir = tmp_path / "parallel" / str(round_number) / name
+        return read_charts(run_visualization_agent(requests[name], output_dir=str(output_dir)))
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        for round_number in range(rounds):
+            futures = {name: pool.submit(render, name, round_number) for name in requests}
+            for name, future in futures.items():
+                assert future.result(timeout=120) == expected[name], f"request {name!r} got wrong charts"
 
 
 # Agent 4 — Insights

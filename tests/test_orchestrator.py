@@ -1,3 +1,4 @@
+import asyncio
 import os
 
 import pytest
@@ -55,3 +56,31 @@ def test_run_pipeline_steps_raises_with_failed_step(sample_csv, workdir, mock_ll
 def test_run_pipeline_returns_none_on_failure(workdir, mock_llm):
     assert orchestrator.run_pipeline(str(workdir / "missing.csv")) is None
     mock_llm.assert_not_called()
+
+
+def test_run_pipeline_steps_async_matches_sync_results(sample_csv, workdir, mock_async_llm):
+    results = asyncio.run(orchestrator.run_pipeline_steps_async(sample_csv))
+
+    assert list(results) == ["data", "eda", "charts", "rag", "insights", "report"]
+    assert results["eda"]["attrition_rate"] == 37.5
+    assert len(results["charts"]) == 4
+    assert results["insights"]["insights"] == FAKE_INSIGHTS
+    assert os.path.exists(results["report"])
+    mock_async_llm.assert_awaited_once()
+
+
+def test_run_pipeline_steps_async_raises_with_failed_step(sample_csv, workdir, mock_async_llm):
+    mock_async_llm.side_effect = RuntimeError("LLM down")
+
+    with pytest.raises(orchestrator.PipelineError) as excinfo:
+        asyncio.run(orchestrator.run_pipeline_steps_async(sample_csv))
+
+    assert excinfo.value.step == "Agent 4 — Insights"
+    assert "LLM down" in str(excinfo.value)
+
+
+def test_run_analysis_steps_async_stops_before_llm(sample_csv, workdir, mock_async_llm):
+    results = asyncio.run(orchestrator.run_analysis_steps_async(sample_csv))
+
+    assert list(results) == ["data", "eda", "charts", "rag"]
+    mock_async_llm.assert_not_called()

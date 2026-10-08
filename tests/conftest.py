@@ -1,7 +1,7 @@
 import os
 import sys
 import types
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import numpy as np
 import pandas as pd
@@ -77,3 +77,50 @@ def mock_llm(monkeypatch):
     create.return_value.choices[0].message.content = FAKE_INSIGHTS
     monkeypatch.setattr(insight_agent, "OpenAI", client_class)
     return create
+
+
+# The pieces the fake LLM streams; joined together they equal FAKE_INSIGHTS
+FAKE_STREAM_PIECES = ["KEY FINDINGS\n- Attrition ", "is 37.5%\nROOT CAUSES\nOvertime.\n", "RECOMMENDATIONS\n- Reduce overtime"]
+
+
+def _stream_chunk(text):
+    chunk = MagicMock()
+    chunk.choices = [MagicMock()]
+    chunk.choices[0].delta.content = text
+    return chunk
+
+
+async def fake_llm_stream(pieces, error=None):
+    """Stand-in for the SDK's streaming response: yields one chunk per piece, then optionally fails."""
+    # Real streams also contain chunks without text; the agent has to skip them
+    yield _stream_chunk(None)
+    for piece in pieces:
+        yield _stream_chunk(piece)
+    usage_only = MagicMock()
+    usage_only.choices = []
+    yield usage_only
+    if error:
+        raise error
+
+
+@pytest.fixture
+def mock_async_llm(monkeypatch):
+    """Replace the AsyncOpenAI client used by the API; returns the mocked `create` call.
+
+    `create` answers with a full completion, or with a chunk stream when called with stream=True.
+    """
+    import insight_agent
+
+    completion = MagicMock()
+    completion.choices = [MagicMock()]
+    completion.choices[0].message.content = FAKE_INSIGHTS
+
+    async def fake_create(**kwargs):
+        return fake_llm_stream(FAKE_STREAM_PIECES) if kwargs.get("stream") else completion
+
+    client_class = MagicMock(name="AsyncOpenAI")
+    client = client_class.return_value
+    client.__aenter__.return_value = client
+    client.chat.completions.create = AsyncMock(side_effect=fake_create)
+    monkeypatch.setattr(insight_agent, "AsyncOpenAI", client_class)
+    return client.chat.completions.create
