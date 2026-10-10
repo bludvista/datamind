@@ -133,6 +133,16 @@ Dockerfile
 .github/workflows/ci.yml
 ```
 
+## Data protection and AI governance
+
+This describes what the code does today. It is not a statement of compliance with the GDPR or the EU AI Act. Details are in [docs/GOVERNANCE.md](docs/GOVERNANCE.md).
+
+- **Data read:** the whole uploaded CSV is loaded into memory. The analysis uses `Attrition`, `Department`, `MonthlyIncome`, `OverTime`, `JobSatisfaction` and `Age`; the names of the other columns appear in the ingestion summary.
+- **Sent to the LLM provider (OpenRouter):** aggregated statistics only, not raw rows: the overall attrition rate, the attrition rate per department and per overtime group, and the average age of leavers and stayers, plus the text retrieved from `rag_docs/`. No minimum group size is enforced, so very small groups could reveal individuals. The model is `openrouter/auto`, so the underlying model provider is not fixed; provider retention terms are to be reviewed.
+- **Retention:** charts and reports in `outputs/<request_id>/` are kept indefinitely; nothing deletes them. Remove them by hand with `rm -rf outputs/<request_id>` (PowerShell: `Remove-Item -Recurse -Force outputs\<request_id>`). With the Docker command above they are in the mounted `outputs/` folder on the host. The API deletes the uploaded CSV after the analysis; the Streamlit app leaves its temporary copy in the system temp directory.
+- **Access:** the API has no authentication yet, and no rate or upload size limit. Run it only locally or on a trusted network.
+- **EU AI Act:** employment and worker management is a high-risk area (Annex III, point 4). The tool reports aggregate statistics and does not score individual employees, so its classification is to be reviewed; it would very likely be high-risk if used to predict or decide about individuals. Human review of every report before use, and informing employees that the tool is used, would be needed. Neither is implemented.
+
 ## Known limitations
 
 - Generated charts and reports in `outputs/` are not cleaned up automatically.
